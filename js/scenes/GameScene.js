@@ -9,10 +9,15 @@ class GameScene extends Phaser.Scene {
         this.lives = 3;
         this.gameOver = false;
         this.gamePaused = false;
+        this.lastShotTime = 0;
     }
 
     create() {
         this.add.image(200, 300, 'river');
+
+        // Inicializar SoundManager
+        this.soundManager = new SoundManager(this);
+        this.soundManager.playGameMusic();
 
         this.player = this.physics.add.sprite(200, 550, 'player');
         this.player.setBounce(0);
@@ -122,9 +127,25 @@ class GameScene extends Phaser.Scene {
         if (this.gameOver) return;
         
         const x = Phaser.Math.Between(30, 370);
-        const enemy = this.enemies.create(x, -10, 'enemy');
-        enemy.setVelocityY(150 + (this.level * 20));
+        const enemyType = Phaser.Math.Between(1, 4);
+        const enemyData = this.getEnemyData(enemyType);
+        
+        const enemy = this.enemies.create(x, -30, enemyData.texture);
+        enemy.setVelocityY(enemyData.speed + (this.level * 20));
         enemy.setBounce(0);
+        enemy.enemyType = enemyType;
+        enemy.displayWidth = enemyData.width;
+        enemy.displayHeight = enemyData.height;
+    }
+
+    getEnemyData(type) {
+        const enemyData = {
+            1: { texture: 'enemy1', width: 20, height: 20, speed: 150, points: 10 },
+            2: { texture: 'enemy2', width: 24, height: 24, speed: 130, points: 15 },
+            3: { texture: 'enemy3', width: 18, height: 18, speed: 170, points: 12 },
+            4: { texture: 'enemy4', width: 28, height: 28, speed: 100, points: 20 }
+        };
+        return enemyData[type];
     }
 
     spawnPowerUp() {
@@ -158,6 +179,11 @@ class GameScene extends Phaser.Scene {
     }
 
     shoot() {
+        const now = this.time.now;
+        if (now - this.lastShotTime < 200) return; // Limitar cadencia de disparo
+        
+        this.lastShotTime = now;
+        
         if (this.projectiles.children.entries.length > 5) return;
         
         const projectile = this.projectiles.create(this.player.x, this.player.y - 15, null);
@@ -170,12 +196,18 @@ class GameScene extends Phaser.Scene {
         
         projectile.setTexture('projectile');
         projectile.setVelocityY(-300);
+        
+        // Sonido de disparo
+        this.soundManager.playShoot();
     }
 
     hitEnemy(player, enemy) {
         enemy.destroy();
         this.lives--;
         this.livesText.setText(`Vidas: ${this.lives}`);
+        
+        // Sonido de daño
+        this.soundManager.playDamage();
         
         if (this.lives <= 0) {
             this.endGame();
@@ -184,9 +216,16 @@ class GameScene extends Phaser.Scene {
 
     hitEnemyWithProjectile(projectile, enemy) {
         projectile.destroy();
+        const enemyType = enemy.enemyType || 1;
+        const enemyData = this.getEnemyData(enemyType);
+        const points = enemyData.points;
+        
         enemy.destroy();
-        this.score += 10;
+        this.score += points;
         this.scoreText.setText(`Puntuación: ${this.score}`);
+        
+        // Sonido de enemigo eliminado
+        this.soundManager.playEnemyHit();
         
         if (this.score > 0 && this.score % 100 === 0) {
             this.levelUp();
@@ -199,12 +238,18 @@ class GameScene extends Phaser.Scene {
         this.lives = Math.min(this.lives + 1, 5);
         this.scoreText.setText(`Puntuación: ${this.score}`);
         this.livesText.setText(`Vidas: ${this.lives}`);
+        
+        // Sonido de power-up
+        this.soundManager.playPowerUpCollect();
     }
 
     hitObstacle(player, obstacle) {
         obstacle.destroy();
         this.lives--;
         this.livesText.setText(`Vidas: ${this.lives}`);
+        
+        // Sonido de daño
+        this.soundManager.playDamage();
         
         if (this.lives <= 0) {
             this.endGame();
@@ -215,6 +260,9 @@ class GameScene extends Phaser.Scene {
         this.level++;
         this.levelText.setText(`Nivel: ${this.level}`);
         this.enemySpawner.delay = Math.max(300, 800 - (this.level * 50));
+        
+        // Sonido de level up
+        this.soundManager.playLevelUp();
     }
 
     togglePause() {
@@ -238,6 +286,14 @@ class GameScene extends Phaser.Scene {
     endGame() {
         this.gameOver = true;
         this.physics.pause();
+        
+        // Sonido de game over
+        this.soundManager.playGameOver();
+        
         this.scene.start('GameOver', { score: this.score, level: this.level });
+    }
+
+    shutdown() {
+        this.soundManager = null;
     }
 }
